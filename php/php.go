@@ -62,6 +62,7 @@ func parsePHPFile(linter *com.Linter, filename string, entriesDict map[string]ma
 	}
 
 	tokens := getTokens(lexer)
+	linter.Dprintf("start parsePHPFile(%s): %d tokens\n", filename, len(tokens))
 	for i := 0; i < len(tokens); i++ {
 		tok := tokens[i]
 		if tok.is(TOKEN_IDENTIFIER, "__d") {
@@ -75,9 +76,12 @@ func parsePHPFile(linter *com.Linter, filename string, entriesDict map[string]ma
 				continue
 			}
 			if tokens[i+2].isType(TOKEN_STRING2) {
-				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelWarning, "1st argument of __d() should be a single quoted string")
+				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelWarning, "1st argument of __d() should be a single quoted string not a double quoted string.")
+			} else if tokens[i+2].is(TOKEN_SYMBOL, "$") {
+				// 解析不可能故逃げる
+				continue
 			} else if !tokens[i+2].isType(TOKEN_STRING1) {
-				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelWarning, "1st argument of __d() should be a single quoted string")
+				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelWarning, "1st argument of __d() should be a single quoted string: "+tokens[i+2].Value)
 				continue
 			}
 
@@ -87,9 +91,12 @@ func parsePHPFile(linter *com.Linter, filename string, entriesDict map[string]ma
 			}
 
 			if tokens[i+4].isType(TOKEN_STRING2) {
-				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelWarning, "2nd argument of __d() should be a single quoted string")
+				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelWarning, "2nd argument of __d() should be a single quoted string not a double quoted string.")
+			} else if tokens[i+4].is(TOKEN_SYMBOL, "$") {
+				// 解析不可能故逃げる
+				continue
 			} else if !tokens[i+4].isType(TOKEN_STRING1) {
-				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelWarning, "2nd argument of __d() should be a single quoted string")
+				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelWarning, "2nd argument of __d() should be a single quoted string: "+tokens[i+4].Value)
 				continue
 			}
 
@@ -100,13 +107,13 @@ func parsePHPFile(linter *com.Linter, filename string, entriesDict map[string]ma
 
 			entries, ok := entriesDict[tokens[i+2].Value]
 			if !ok {
-				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelError, "Unknown pluginname: "+tokens[i+2].Value)
+				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelError, "Unknown domain: "+tokens[i+2].Value+", msgid="+tokens[i+4].Value)
 				continue
 			}
 
 			entry, ok := entries[tokens[i+4].Value]
 			if !ok {
-				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelError, "Unknown msgid: "+tokens[i+4].Value)
+				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelError, "Unknown msgid: __d("+tokens[i+2].Value+","+tokens[i+4].Value+")")
 				continue
 			}
 
@@ -139,8 +146,42 @@ func getTokens(lexer *Lexer) []*Token {
 		tokens = append(tokens, tok)
 	}
 
-	return tokens
+	// 文字列を連結する
+	ret := make([]*Token, 0, len(tokens))
+	for i := 0; i < len(tokens); i++ {
+		if len(ret) > 0 && ret[len(ret)-1].isString() && tokens[i].isString() {
+			// 文字列が続いた
+			ret[len(ret)-1].concat(tokens[i])
+			continue
+		}
 
+		if len(ret) > 0 && i+1 < len(tokens) && ret[len(ret)-1].isString() && tokens[i].is(TOKEN_SYMBOL, ".") && tokens[i+1].isString() {
+			// . で連結された文字列
+			ret[len(ret)-1].concat(tokens[i+1])
+			i++
+			continue
+		}
+
+		ret = append(ret, tokens[i])
+	}
+
+	return ret
+
+}
+
+/**
+ * 破壊的
+ */
+func (t *Token) concat(s *Token) *Token {
+	t.Value += s.Value
+	if t.Type != s.Type {
+		t.Type = TOKEN_STRING2
+	}
+	return t
+}
+
+func (t *Token) isString() bool {
+	return t.isType(TOKEN_STRING1) || t.isType(TOKEN_STRING2)
 }
 
 func (t *Token) isType(tokenType TokenType) bool {

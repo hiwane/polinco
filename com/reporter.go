@@ -36,7 +36,9 @@ type reportCounter struct {
 }
 
 func (r *reportCounter) addError(level int) {
-	r.num++
+	if level <= LevelError {
+		r.num++
+	}
 }
 
 func (r *reportCounter) CountError() int {

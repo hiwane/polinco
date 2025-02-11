@@ -22,4 +22,15 @@ type Reporter interface {
 type Linter struct {
 	Reporter Reporter
 	Logger   *log.Logger
+	verbose  bool
+}
+
+func (l *Linter) SetVerbose(verbose bool) {
+	l.verbose = verbose
+}
+
+func (l *Linter) Dprintf(fmt string, args ...any) {
+	if l.verbose {
+		l.Logger.Printf(fmt, args...)
+	}
 }

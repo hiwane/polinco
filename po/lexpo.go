@@ -86,6 +86,13 @@ func (l *pLexer) Lex(lval *yySymType) int {
 		escape := false
 		for (l.Peek() != '"' || escape) && l.Peek() != scanner.EOF {
 			d := l.Next()
+
+			if escape && d == '"' {
+				sbuf[len(sbuf)-1] = d
+				escape = false
+				continue
+			}
+
 			if d == '\\' {
 				escape = !escape
 			} else {

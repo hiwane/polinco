@@ -42,7 +42,7 @@ func NewLexer(reader io.Reader) *Lexer {
 	s.Init(reader)
 	s.Mode = scanner.ScanIdents | scanner.ScanInts | scanner.ScanFloats | scanner.ScanStrings | scanner.ScanChars | scanner.ScanRawStrings | scanner.ScanComments
 
-	s.Mode = scanner.ScanIdents | scanner.ScanInts | scanner.ScanFloats | scanner.ScanComments
+	s.Mode = scanner.ScanIdents | scanner.ScanInts | scanner.ScanComments
 
 	return &Lexer{scanner: s}
 }

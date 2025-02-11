@@ -10,6 +10,7 @@ import (
 	"polinco/com"
 	"polinco/php"
 	"polinco/po"
+	"regexp"
 	"strings"
 )
 
@@ -22,6 +23,12 @@ func (s *strsslice) String() string {
 }
 
 func (s *strsslice) Set(value string) error {
+	for _, v := range *s {
+		if v == value {
+			return nil
+		}
+	}
+
 	*s = append(*s, value)
 	return nil
 }
@@ -32,7 +39,8 @@ func main() {
 		// locale_dir    = flag.String("locale", "", "locale directory")
 		src_dir       = flag.String("src", "", "source directory")
 		parse_level   = flag.Int("parse-level", 0, "debug level")
-		parse_verbose = flag.Bool("parse-verbose", false, "verbose mode")
+		parse_verbose = flag.Bool("parse-verbose", false, "verbose mode of parser")
+		verbose       = flag.Bool("verbose", false, "verbose mode of polinco")
 	)
 	reporters := []string{"plain"} // , "json", "csv"}
 	opt_reporter := flagvar.NewChoiceVar(reporters[0], reporters)
@@ -49,6 +57,7 @@ func main() {
 
 	reporter := com.NewReporter(opt_reporter.String())
 	linter := &com.Linter{Reporter: reporter, Logger: logger}
+	linter.SetVerbose(*verbose)
 
 	po.Debug(*parse_level, *parse_verbose)
 
@@ -71,6 +80,7 @@ func main() {
 	// locale_dir/ja_JP/*.po を読み込む
 
 	if linter.Reporter.CountError() > 0 {
+		fmt.Printf("exit ... pofile err %d\n", linter.Reporter.CountError())
 		os.Exit(1)
 	}
 
@@ -81,7 +91,20 @@ func main() {
 		}
 	}
 
+	if linter.Reporter.CountError() > 0 {
+		fmt.Printf("exit ... phpfile err %d\n", linter.Reporter.CountError())
+		os.Exit(1)
+	}
+
 	os.Exit(0)
+}
+
+func countEntry(entries map[string]map[string]*com.PoEntry) int {
+	n := 0
+	for _, v := range entries {
+		n += len(v)
+	}
+	return n
 }
 
 func parsePoLocale(linter *com.Linter, locale_dir string) (map[string]map[string]*com.PoEntry, error) {
@@ -116,10 +139,11 @@ func parsePoLocale(linter *com.Linter, locale_dir string) (map[string]map[string
 				linter.Logger.Fatalf("po files are different: %s", dir)
 				return nil, err
 			}
-			panic("not implemented!")
 		}
 
-		ret = poret
+		if ret == nil || len(ret) < len(poret) || len(ret) == len(poret) && countEntry(ret) < countEntry(poret) {
+			ret = poret
+		}
 	}
 	return ret, nil
 }
@@ -132,6 +156,8 @@ func parsePoDir(linter *com.Linter, files []string) (map[string]map[string]*com.
 	for _, file := range files {
 		// file = $path/plugin_name.po から plugin_name を取得
 		plugin_name := strings.TrimSuffix(filepath.Base(file), ".po")
+
+		linter.Dprintf("%s: %s start\n", plugin_name, file)
 
 		id2entry, ok := retmapi[plugin_name]
 		if !ok {
@@ -177,11 +203,13 @@ func parsePoDir(linter *com.Linter, files []string) (map[string]map[string]*com.
 func parsePoFile(linter *com.Linter, filename string) (map[string]*com.PoEntry, map[string]*com.PoEntry, error) {
 	r, err := os.Open(filename)
 	if err != nil {
+		linter.Logger.Fatal(err)
 		return nil, nil, err
 	}
 
 	poEntries, err := po.ParsePo(r)
 	if err != nil {
+		linter.Logger.Fatal(err)
 		return nil, nil, err
 	}
 
@@ -214,6 +242,26 @@ func parsePoFile(linter *com.Linter, filename string) (map[string]*com.PoEntry, 
 				fmt.Sprintf("2duplicate msgid: %s=%s [%d:%s]", entry.MsgID, entry.MsgStr, e.Pos.Line, e.MsgID))
 		} else {
 			id2entry[entry.MsgID] = entry
+		}
+
+		b, err := regexp.MatchString(`^[a-zA-Z0-9 {}()<>:/=%[\]'"?,._\\-]*$`, entry.MsgID)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if !b {
+			linter.Reporter.ReportError(
+				filename, entry.Pos.Line, entry.Pos.Column, com.LevelError,
+				fmt.Sprintf("invalid msgid: '%s'", entry.MsgID))
+		}
+
+		for i := 0; i < 10; i++ {
+			tag := fmt.Sprintf("{%d}", i)
+			if strings.Contains(entry.MsgID, tag) != strings.Contains(entry.MsgStr, tag) {
+				linter.Reporter.ReportError(
+					filename, entry.Pos.Line, entry.Pos.Column, com.LevelWarning,
+					fmt.Sprintf("missing tag: %s in msgid<%s> or msgstr<%s>", tag, entry.MsgID, entry.MsgStr))
+			}
 		}
 	}
 
