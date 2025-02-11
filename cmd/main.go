@@ -15,18 +15,32 @@ import (
 
 var gitCommit string
 
+type strsslice []string
+
+func (s *strsslice) String() string {
+	return fmt.Sprintf("%v", *s)
+}
+
+func (s *strsslice) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
 func main() {
 
 	var (
-		locale_dir    = flag.String("locale", "", "locale directory")
+		// locale_dir    = flag.String("locale", "", "locale directory")
 		src_dir       = flag.String("src", "", "source directory")
-		package_name  = flag.String("package", "", "package name")
 		parse_level   = flag.Int("parse-level", 0, "debug level")
 		parse_verbose = flag.Bool("parse-verbose", false, "verbose mode")
 	)
 	reporters := []string{"plain"} // , "json", "csv"}
 	opt_reporter := flagvar.NewChoiceVar(reporters[0], reporters)
 	flag.Var(opt_reporter, "reporter", fmt.Sprintf("reporter (choose from %v)", reporters))
+
+	var plugins strsslice
+	// *.po ファイルを読み込むプラグイン名
+	flag.Var(&plugins, "plugin", "plugin name")
 
 	flag.Parse()
 
@@ -37,36 +51,31 @@ func main() {
 	linter := &com.Linter{Reporter: reporter, Logger: logger}
 
 	po.Debug(*parse_level, *parse_verbose)
-	if *locale_dir == "" {
-		// po.Debug(8, true)
-		sep := "@@@@@@@@@@@@@@@@@@\n"
-		for _, s := range []string{
-			"msgid \"hoge\"\nmsgstr \"fuga\"\n",
-			"msgid \"\"\nmsgstr \"\"\n",
-			"msgid \"gaogao\"\nmsgstr \"hoghoge\"\n\"guruguru\"\n",
-		} {
-			fmt.Printf("%s%s%s", sep, s, sep)
-			r := strings.NewReader(s)
-			po.ParsePo(r)
+
+	entriesDict := make(map[string]map[string]*com.PoEntry)
+	for _, plugin := range plugins {
+		locale_dir := plugin + "/resources/locales/"
+		pentries, err := parsePoLocale(linter, locale_dir)
+		if err != nil {
+			os.Exit(1)
 		}
-		os.Exit(0)
+
+		for k, v := range pentries {
+			if _, ok := entriesDict[k]; ok {
+				linter.Reporter.ReportError("", 0, 0, com.LevelError, fmt.Sprintf("duplicate plugin: %s", k))
+			}
+			entriesDict[k] = v
+		}
 	}
 
 	// locale_dir/ja_JP/*.po を読み込む
-	entries, err := parsePoLocale(linter, *locale_dir)
-	if err != nil {
-		os.Exit(1)
-	}
 
 	if linter.Reporter.CountError() > 0 {
 		os.Exit(1)
 	}
 
 	if *src_dir != "" {
-		entriesDict := make(map[string]map[string]*com.PoEntry)
-		entriesDict[*package_name] = entries
-
-		err = php.ParsePHPDir(linter, *src_dir, entriesDict)
+		err := php.ParsePHPDir(linter, *src_dir, entriesDict)
 		if err != nil {
 			os.Exit(1)
 		}
@@ -75,7 +84,7 @@ func main() {
 	os.Exit(0)
 }
 
-func parsePoLocale(linter *com.Linter, locale_dir string) (map[string]*com.PoEntry, error) {
+func parsePoLocale(linter *com.Linter, locale_dir string) (map[string]map[string]*com.PoEntry, error) {
 	// locale_dir/ja_JP/*.po を読み込む
 	// fmt.Printf("parse_dir  '%s'\n", locale_dir)
 	dirs, err := filepath.Glob(locale_dir + "/*")
@@ -83,7 +92,7 @@ func parsePoLocale(linter *com.Linter, locale_dir string) (map[string]*com.PoEnt
 		linter.Logger.Fatal(err)
 		return nil, err
 	}
-	var ret map[string]*com.PoEntry
+	var ret map[string]map[string]*com.PoEntry
 	for _, dir := range dirs {
 		// fmt.Printf("parse_dir  %s\n", dir)
 		files, err := filepath.Glob(dir + "/*.po")
@@ -115,12 +124,27 @@ func parsePoLocale(linter *com.Linter, locale_dir string) (map[string]*com.PoEnt
 	return ret, nil
 }
 
-func parsePoDir(linter *com.Linter, files []string) (map[string]*com.PoEntry, error) {
+func parsePoDir(linter *com.Linter, files []string) (map[string]map[string]*com.PoEntry, error) {
 
-	id2entry := make(map[string]*com.PoEntry)
-	str2entry := make(map[string]*com.PoEntry)
+	retmaps := make(map[string]map[string]*com.PoEntry)
+	retmapi := make(map[string]map[string]*com.PoEntry)
+
 	for _, file := range files {
-		fmt.Printf("parse_file %s\n", file)
+		// file = $path/plugin_name.po から plugin_name を取得
+		plugin_name := strings.TrimSuffix(filepath.Base(file), ".po")
+
+		id2entry, ok := retmapi[plugin_name]
+		if !ok {
+			id2entry = make(map[string]*com.PoEntry)
+			retmapi[plugin_name] = id2entry
+		}
+
+		str2entry, ok := retmaps[plugin_name]
+		if !ok {
+			str2entry = make(map[string]*com.PoEntry)
+			retmaps[plugin_name] = str2entry
+		}
+
 		_id2, _str2, err := parsePoFile(linter, file)
 		if err != nil {
 			linter.Reporter.ReportError(file, 0, 0, com.LevelError, err.Error())
@@ -129,7 +153,7 @@ func parsePoDir(linter *com.Linter, files []string) (map[string]*com.PoEntry, er
 
 		for msgid, entry := range _id2 {
 			if e, ok := id2entry[msgid]; ok {
-				linter.Reporter.ReportError(file, entry.Pos.Line, entry.Pos.Column, com.LevelError, fmt.Sprintf("1duplicate msgid: %s=%s [%s:%d:%s]", msgid, entry.MsgStr, e.Pos.Filename, e.Pos.Line, e.MsgStr))
+				linter.Reporter.ReportError(file, entry.Pos.Line, entry.Pos.Column, com.LevelError, fmt.Sprintf("1duplicate msgid: %s=%s [%s:%d:%s]", msgid, entry.MsgStr, e.Filename, e.Pos.Line, e.MsgStr))
 			} else {
 				id2entry[msgid] = entry
 			}
@@ -137,15 +161,14 @@ func parsePoDir(linter *com.Linter, files []string) (map[string]*com.PoEntry, er
 
 		for msgstr, entry := range _str2 {
 			if e, ok := str2entry[msgstr]; ok {
-				linter.Reporter.ReportError(file, entry.Pos.Line, entry.Pos.Column, com.LevelWarning, fmt.Sprintf("1duplicate msgstr: %s=%s [%s:%d:%s]", msgstr, entry.MsgID, e.Pos.Filename, e.Pos.Line, e.MsgID))
+				linter.Reporter.ReportError(file, entry.Pos.Line, entry.Pos.Column, com.LevelWarning, fmt.Sprintf("1duplicate msgstr: %s=%s [%s:%d:%s]", msgstr, entry.MsgID, e.Filename, e.Pos.Line, e.MsgID))
 			} else {
 				str2entry[msgstr] = entry
 			}
 		}
 	}
 
-	return id2entry, nil
-
+	return retmapi, nil
 }
 
 /***
@@ -175,12 +198,12 @@ func parsePoFile(linter *com.Linter, filename string) (map[string]*com.PoEntry, 
 		}
 
 		if e, ok := str2entry[entry.MsgStr]; ok {
-			if e.Filename == "" {
+			if e.Filename == "" || e.Filename != entry.Filename {
 				panic("bug!")
 			}
 			linter.Reporter.ReportError(
 				filename, entry.Pos.Line, entry.Pos.Column, com.LevelWarning,
-				fmt.Sprintf("2duplicate msgstr: %s=%s [%s:%d:%s]", entry.MsgID, entry.MsgStr, e.Filename, e.Pos.Line, e.MsgID))
+				fmt.Sprintf("2duplicate msgstr: %s=%s [%d:%s]", entry.MsgID, entry.MsgStr, e.Pos.Line, e.MsgID))
 		} else {
 			str2entry[entry.MsgStr] = entry
 		}
@@ -188,7 +211,7 @@ func parsePoFile(linter *com.Linter, filename string) (map[string]*com.PoEntry, 
 		if e, ok := id2entry[entry.MsgID]; ok {
 			linter.Reporter.ReportError(
 				filename, entry.Pos.Line, entry.Pos.Column, com.LevelError,
-				fmt.Sprintf("2duplicate msgid: %s=%s [%s:%d:%s]", entry.MsgID, entry.MsgStr, e.Filename, e.Pos.Line, e.MsgID))
+				fmt.Sprintf("2duplicate msgid: %s=%s [%d:%s]", entry.MsgID, entry.MsgStr, e.Pos.Line, e.MsgID))
 		} else {
 			id2entry[entry.MsgID] = entry
 		}
@@ -197,7 +220,7 @@ func parsePoFile(linter *com.Linter, filename string) (map[string]*com.PoEntry, 
 	return id2entry, str2entry, nil
 }
 
-func comparePo(po1, po2 map[string]*com.PoEntry) bool {
+func comparePo(po1, po2 map[string]map[string]*com.PoEntry) bool {
 	if len(po1) != len(po2) {
 		return false
 	}
