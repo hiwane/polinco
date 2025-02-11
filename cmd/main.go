@@ -186,11 +186,17 @@ func parsePoDir(linter *com.Linter, files []string) (map[string]map[string]*com.
 		}
 
 		for msgstr, entry := range _str2 {
-			if e, ok := str2entry[msgstr]; ok {
-				linter.Reporter.ReportError(file, entry.Pos.Line, entry.Pos.Column, com.LevelWarning, fmt.Sprintf("1duplicate msgstr: %s=%s [%s:%d:%s]", msgstr, entry.MsgID, e.Filename, e.Pos.Line, e.MsgID))
-			} else {
-				str2entry[msgstr] = entry
+			if e, ok := str2entry[msgstr]; ok && entry.MsgID != e.MsgID {
+				// 英語の場合複数形と最後にピリオドがあるかもしれない
+				if entry.MsgID+"." != e.MsgID &&
+					entry.MsgID != e.MsgID+"." &&
+					entry.MsgID+"s" != e.MsgID &&
+					entry.MsgID != e.MsgID+"s" {
+					linter.Reporter.ReportError(file, entry.Pos.Line, entry.Pos.Column, com.LevelWarning, fmt.Sprintf("1duplicate msgstr: %s=%s [%s:%d:%s]", msgstr, entry.MsgID, e.Filename, e.Pos.Line, e.MsgID))
+					continue
+				}
 			}
+			str2entry[msgstr] = entry
 		}
 	}
 
@@ -229,9 +235,18 @@ func parsePoFile(linter *com.Linter, filename string) (map[string]*com.PoEntry, 
 			if e.Filename == "" || e.Filename != entry.Filename {
 				panic("bug!")
 			}
-			linter.Reporter.ReportError(
-				filename, entry.Pos.Line, entry.Pos.Column, com.LevelWarning,
-				fmt.Sprintf("2duplicate msgstr: %s=%s [%d:%s]", entry.MsgID, entry.MsgStr, e.Pos.Line, e.MsgID))
+			if entry.MsgID+"." != e.MsgID &&
+				entry.MsgID != e.MsgID+"." &&
+				entry.MsgID+"s" != e.MsgID &&
+				entry.MsgID != e.MsgID+"s" {
+				linter.Reporter.ReportError(
+					filename, entry.Pos.Line, entry.Pos.Column, com.LevelWarning,
+					fmt.Sprintf("2duplicate msgstr: %s=%s [%d:%s]", entry.MsgID, entry.MsgStr, e.Pos.Line, e.MsgID))
+			} else {
+				linter.Reporter.ReportError(
+					filename, entry.Pos.Line, entry.Pos.Column, com.LevelInfo,
+					fmt.Sprintf("2duplicate msgstr x similar msgid: %s=%s [%d:%s]", entry.MsgID, entry.MsgStr, e.Pos.Line, e.MsgID))
+			}
 		} else {
 			str2entry[entry.MsgStr] = entry
 		}

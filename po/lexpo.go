@@ -87,6 +87,8 @@ func (l *pLexer) Lex(lval *yySymType) int {
 		for (l.Peek() != '"' || escape) && l.Peek() != scanner.EOF {
 			d := l.Next()
 
+			// \" を " に変換.
+			// 呼び出し元ではシングルクォートな文字列になることを想定
 			if escape && d == '"' {
 				sbuf[len(sbuf)-1] = d
 				escape = false

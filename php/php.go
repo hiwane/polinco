@@ -117,20 +117,51 @@ func parsePHPFile(linter *com.Linter, filename string, entriesDict map[string]ma
 				continue
 			}
 
-			// {0} が含まれているか
-			sep := ")"
-			if strings.Contains(entry.MsgStr, "{0}") {
-				sep = ","
+			var i int
+			for i = 9; i >= 0; i-- {
+				if strings.Contains(entry.MsgStr, fmt.Sprintf("{%d}", i)) {
+					break
+				}
 			}
 
-			if !tokens[i+5].is(TOKEN_SYMBOL, sep) {
-				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelError, fmt.Sprintf("Invalid __d function: missing '%s': %s", sep, entry.MsgID))
+			argnum := getArgNum(tokens, i+5)
+			if argnum < i {
+				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelError, fmt.Sprintf("Invalid __d function: missing %d-th argument for {%d}", i+1, i))
 			}
 		}
 	}
 
 	// Error handler
 	return nil
+}
+
+func getArgNum(tokens []*Token, start int) int {
+	depth := 0
+	argnum := 0
+	empty := true
+
+	for i := start; i < len(tokens); i++ {
+		if tokens[i].is(TOKEN_SYMBOL, "(") {
+			depth++
+		} else if tokens[i].is(TOKEN_SYMBOL, ")") {
+			depth--
+			if depth < 0 {
+				if !empty {
+					argnum++
+				}
+				break
+			}
+		} else if tokens[i].is(TOKEN_SYMBOL, ",") {
+			if depth == 0 {
+				argnum++
+				empty = true
+			}
+		} else {
+			empty = false
+		}
+	}
+
+	return argnum
 }
 
 func getTokens(lexer *Lexer) []*Token {
@@ -166,7 +197,6 @@ func getTokens(lexer *Lexer) []*Token {
 	}
 
 	return ret
-
 }
 
 /**
