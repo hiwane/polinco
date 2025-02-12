@@ -117,16 +117,30 @@ func parsePHPFile(linter *com.Linter, filename string, entriesDict map[string]ma
 				continue
 			}
 
-			var i int
-			for i = 9; i >= 0; i-- {
-				if strings.Contains(entry.MsgStr, fmt.Sprintf("{%d}", i)) {
+			var placeholder int
+			for placeholder = 9; placeholder >= 0; placeholder-- {
+				if strings.Contains(entry.MsgStr, fmt.Sprintf("{%d}", placeholder)) {
 					break
 				}
 			}
 
-			argnum := getArgNum(tokens, i+5)
-			if argnum < i {
-				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelError, fmt.Sprintf("Invalid __d function: missing %d-th argument for {%d}", i+1, i))
+			var argnum int
+			if tokens[i+5].is(TOKEN_SYMBOL, ")") {
+				argnum = 0
+			} else if !tokens[i+5].is(TOKEN_SYMBOL, ",") {
+				// 文法エラー...?
+				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelError, "Invalid __d function: missing ','")
+				continue
+			}
+			if tokens[i+6].is(TOKEN_SYMBOL, "[") {
+				argnum = getArgNum(tokens[i+7:], "]")
+			} else {
+				argnum = getArgNum(tokens[i+6:], ")")
+			}
+
+			// fmt.Printf("placeholder=%d, argnum=%d, 5=%v 6=%v\n", placeholder, argnum, tokens[i+5].Value, tokens[i+6].Value)
+			if argnum < placeholder+1 {
+				linter.Reporter.ReportError(filename, tok.Lnum, tok.Col, com.LevelError, fmt.Sprintf("Invalid __d function: missing %d-th argument for {%d}. actual=%d", placeholder+1, placeholder, argnum))
 			}
 		}
 	}
@@ -135,15 +149,17 @@ func parsePHPFile(linter *com.Linter, filename string, entriesDict map[string]ma
 	return nil
 }
 
-func getArgNum(tokens []*Token, start int) int {
+func getArgNum(tokens []*Token, end string) int {
 	depth := 0
 	argnum := 0
 	empty := true
 
-	for i := start; i < len(tokens); i++ {
+	for i := 0; i < len(tokens); i++ {
 		if tokens[i].is(TOKEN_SYMBOL, "(") {
 			depth++
-		} else if tokens[i].is(TOKEN_SYMBOL, ")") {
+		} else if tokens[i].is(TOKEN_SYMBOL, "[") {
+			depth++
+		} else if tokens[i].is(TOKEN_SYMBOL, end) {
 			depth--
 			if depth < 0 {
 				if !empty {
@@ -151,6 +167,8 @@ func getArgNum(tokens []*Token, start int) int {
 				}
 				break
 			}
+		} else if tokens[i].is(TOKEN_SYMBOL, "]") || tokens[i].is(TOKEN_SYMBOL, ")") {
+			depth--
 		} else if tokens[i].is(TOKEN_SYMBOL, ",") {
 			if depth == 0 {
 				argnum++
