@@ -16,7 +16,9 @@ type PoEntry struct {
 
 type Reporter interface {
 	ReportError(filename string, lnum, col, level int, msg string)
+	reportError(fullpath, filename string, lnum, col, level int, msg string)
 	CountError() int
+	SetStripPrefix(prefix string)
 }
 
 type Linter struct {

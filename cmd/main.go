@@ -41,8 +41,9 @@ func main() {
 		parse_level   = flag.Int("parse-level", 0, "debug level")
 		parse_verbose = flag.Bool("parse-verbose", false, "verbose mode of parser")
 		verbose       = flag.Bool("verbose", false, "verbose mode of polinco")
+		strip_prefix  = flag.String("strip-prefix", "", "strip the specified prefix from file path in the report")
 	)
-	reporters := []string{"plain"} // , "json", "csv"}
+	reporters := []string{"plain", "github"} // , "json", "csv"}
 	opt_reporter := flagvar.NewChoiceVar(reporters[0], reporters)
 	flag.Var(opt_reporter, "reporter", fmt.Sprintf("reporter (choose from %v)", reporters))
 
@@ -56,6 +57,7 @@ func main() {
 	logger.Printf("start polint! version=%s\n", gitCommit)
 
 	reporter := com.NewReporter(opt_reporter.String())
+	reporter.SetStripPrefix(*strip_prefix)
 	linter := &com.Linter{Reporter: reporter, Logger: logger}
 	linter.SetVerbose(*verbose)
 
@@ -275,7 +277,7 @@ func parsePoFile(linter *com.Linter, filename string) (map[string]*com.PoEntry, 
 			if strings.Contains(entry.MsgID, tag) != strings.Contains(entry.MsgStr, tag) {
 				linter.Reporter.ReportError(
 					filename, entry.Pos.Line, entry.Pos.Column, com.LevelWarning,
-					fmt.Sprintf("missing tag: %s in msgid<%s> or msgstr<%s>", tag, entry.MsgID, entry.MsgStr))
+					fmt.Sprintf("missing `%s` in msgid<%s> or msgstr<%s>", tag, entry.MsgID, entry.MsgStr))
 			}
 		}
 	}
