@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: [ '^1.23', '1.x': ]
+        go: [ '^1.23', '1.x' ]
     steps:
     - uses: actions/checkout@v3
 
@@ -18,10 +18,10 @@ jobs:
         go-version: ${{ matrix.go }}
 
     - name: Test
-      run: go test .
+      run: go test ./...
 
     - name: Lint
-      run: go vet -v .
+      run: go vet -v ./...
 
 
 
