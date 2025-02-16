@@ -1,0 +1,27 @@
+name: Go
+
+on: [push, pull_request]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: [ '^1.23', '1.x': ]
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go ${{ matrix.go }}
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ matrix.go }}
+
+    - name: Test
+      run: go test .
+
+    - name: Lint
+      run: go vet -v .
+
+
+
